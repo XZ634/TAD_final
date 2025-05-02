@@ -813,7 +813,7 @@ beta_lda_top_terms %>%
 Overall, the LDA demonstrated good performance, with most topics being very clear.
 
 | Topic Number | Topic Label | Top Keywords |
-|------------------|------------------|-------------------------------------|
+|------------------|------------------|------------------------------------|
 | **Topic 1** | Chinese culture and civilization | 文化 (culture), 文明 (civilization), 民族 (ethnicity/nation), 文艺 (literature and art), 历史 (history), 人民 (people), 中华民族 (Chinese nation), 中华 (China/Chinese), 中国 (China), 精神 (spirit) |
 | **Topic 2** | Poverty alleviation | 脱贫 (poverty alleviation), 贫困 (poverty), 扶贫 (poverty relief), 地区 (region), 攻坚 (tackle tough issues), 工作 (work), 群众 (the masses), 农村 (rural areas), 人口 (population), 贫 (poor) |
 | **Topic 3** | Youth and Education | 青年 (youth), 广大 (broad/massive), 劳动 (labor), 学生 (students), 教育 (education), 中国 (China), 中 (in/among), 工作 (work), 精神 (spirit), 社会 (society) |
@@ -832,14 +832,14 @@ Overall, the LDA demonstrated good performance, with most topics being very clea
 However, several topics remain unclear—for example, it is difficult to directly infer the themes of Topic 10 and Topic 18 based on their keywords.
 
 | Topic Number | Topic Label | Top Keywords |
-|------------------|------------------|-------------------------------------|
+|------------------|------------------|------------------------------------|
 | **Topic 10** | Hard to understand | 同志 (comrade), 党 (party), 人民 (people), 工作 (work), 革命 (revolution), 说 (say), 理想 (ideal), 领导 (leadership), 学习 (study), 事业 (cause) |
 | **Topic 18** | Reform, but in which area? | 改革 (reform), 全面 (comprehensive), 提出 (propose), 党 (Party), 重大 (major), 工作 (work), 新 (new), 推进 (advance), 深化 (deepen), 意见 (opinion) |
 
 In addition, there are three topics related to diplomacy. However, it is difficult to distinguish among them based on the keywords.
 
 | Topic Number | Topic Label | Top Keywords |
-|------------------|------------------|-------------------------------------|
+|------------------|------------------|------------------------------------|
 | **Topic 4** | International security? | 发展 (development), 世界 (world), 全球 (global), 各国 (all countries), 人类 (humankind), 国际 (international), 安全 (security), 中国 (China), 共同 (common/shared), 合作 (cooperation) |
 | **Topic 8** | BRICS? | 合作 (cooperation), 国家 (countries), 中方 (China), 发展 (development), 国际 (international), 金 (BRICS), 砖 (BRICS), 支持 (support), 共同 (common), 非洲 (Africa) |
 | **Topic 9** | Asia? | 中国 (China), 中 (China), 发展 (development), 关系 (relations), 合作 (cooperation), 亚洲 (Asia), 和平 (peace), 两国 (the two countries), 人民 (people), 共同 (common) |
@@ -909,7 +909,7 @@ Lastly, Topic 4 is broader in scope, addressing “the world,” “global,” �
 In conclusion, we can understand the agenda of Xi Jinping through topic modeling:
 
 | Topic Number | Topic Label | Top Keywords |
-|------------------|------------------|-------------------------------------|
+|------------------|------------------|------------------------------------|
 | **Topic 1** | Chinese culture and civilization | 文化 (culture), 文明 (civilization), 民族 (ethnicity/nation), 文艺 (literature and art), 历史 (history), 人民 (people), 中华民族 (Chinese nation), 中华 (China/Chinese), 中国 (China), 精神 (spirit) |
 | **Topic 2** | Poverty alleviation | 脱贫 (poverty alleviation), 贫困 (poverty), 扶贫 (poverty relief), 地区 (region), 攻坚 (tackle tough issues), 工作 (work), 群众 (the masses), 农村 (rural areas), 人口 (population), 贫 (poor) |
 | **Topic 3** | Youth and Education | 青年 (youth), 广大 (broad/massive), 劳动 (labor), 学生 (students), 教育 (education), 中国 (China), 中 (in/among), 工作 (work), 精神 (spirit), 社会 (society) |
@@ -1579,7 +1579,7 @@ p4 <- compare_word_similarity("党", "忠诚", "Party", "loyalty") # party vs lo
 
 ### 8.3 Topic 3: Concentration of Power
 
-n addition, President Xi has been consolidating power, which is specifically reflected in the decreasing semantic distance between the term “Party Central Committee” (党中央) and concepts related to political authority. The proximity of “Party Central Committee” to words such as “deploy,” “lead,” “decision-making,” and “implement” illustrates this trend.
+In addition, President Xi has been consolidating power, which is specifically reflected in the decreasing semantic distance between the term “Party Central Committee” (党中央) and concepts related to political authority. The proximity of “Party Central Committee” to words such as “deploy,” “lead,” “decision-making,” and “implement” illustrates this trend.
 
 However, We can see that in Mao’s language, the term “Party Central Committee” was semantically distant from these words. Yet, Mao established one of the most centralized governments in human history. This is likely because Mao’s leadership over the Party and the state relied heavily on the immense authority and charisma he built as a revolutionary leader during the war. In contrast, President Xi lacks such a foundation and thus depends on more institutionalized channels—namely, reinforcing the authority of the “Party Central Committee”—to carry out this process of centralization.
 
