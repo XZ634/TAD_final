@@ -1,0 +1,1678 @@
+---
+title: "Does President Xi Make like Mao? A Broader Historical Perspective Using TAD"
+author: "Xiangming Zeng"
+freeze: true
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    self-contained: true
+editor: visual
+---
+
+```{r}
+library(rvest) |> suppressPackageStartupMessages()
+library(httr) |> suppressPackageStartupMessages()
+library(rvest) |> suppressPackageStartupMessages()
+library(tidyverse) |> suppressPackageStartupMessages()
+library(tidytext) |> suppressPackageStartupMessages()
+library(stringr) |> suppressPackageStartupMessages()
+library(showtext) |> suppressPackageStartupMessages()
+library(textrecipes) |> suppressPackageStartupMessages()
+library(tidymodels) |> suppressPackageStartupMessages()
+library(topicmodels) |> suppressPackageStartupMessages()
+library(caret) |> suppressPackageStartupMessages()
+library(lubridate) |> suppressPackageStartupMessages()
+library(glmnet) |> suppressPackageStartupMessages()
+library(grid) |> suppressPackageStartupMessages()
+library(forcats) |> suppressPackageStartupMessages()
+library(textmineR) |> suppressPackageStartupMessages()
+library(ldatuning) |> suppressPackageStartupMessages()
+library(text2vec) |> suppressPackageStartupMessages()
+library(stm) |> suppressPackageStartupMessages()
+library(quanteda) |> suppressPackageStartupMessages()
+library(patchwork) |> suppressPackageStartupMessages()
+library(quanteda.textstats) |> suppressPackageStartupMessages()
+library(quanteda.textplots) |> suppressPackageStartupMessages()
+library(quanteda.corpora) |> suppressPackageStartupMessages()
+library(quanteda.textmodels) |> suppressPackageStartupMessages()
+
+options(warn = -1)
+
+cb_palette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+
+## A Brief Introduction
+
+President Xi’s centralizing behavior, the removal of term limits, and his apparent imitation of Mao’s rhetoric have sparked widespread concern among observers: Is China heading toward a future marked by a return to the ideological fervor of the Mao era? As one article in Time put it.
+
+> Xi is using some of Mao’s strategies to unite the masses and burnish his personal rule, injecting Marxist and Maoist ideology back into Chinese life.\
+> — *Hannah Beech, Time*, Beijing, March 31, 2016
+
+![Illustration by Tim O'Brien for TIME](pictures/Time.jpg)
+
+However, to date, no study has employed a text-as-data approach to empirically examine this important question. This paper represents an initial attempt to do so.
+
+## 1.Data Source and Web Scraping
+
+### 1.1 Data Source
+
+This study aims to construct a dataset of Xi Jinping’s important speeches using approximately 850 posts from the [“Xi Jinping Important Speeches Database”](https://jhsjk.people.cn/result?form=706&else=501) as of January 15, 2025. While the raw data does not cover all of Xi Jinping’s speeches, it includes those delivered on significant occasions, such as diplomatic events and major national celebrations, that reflect the shift in the focus of Chinese politics. Therefore, it remains a valuable data source for studying Chinese politics and policy.
+
+### 1.2 Web Scriping
+
+During the web scraping stage, the primary issue was that the captions under inserted images were also being extracted as text. After reviewing these captions, I identified a pattern: they all contained either of the following phrases, “新华社” (Xinhua News Agency) or “供图” (This photo is provided by). Therefore, I filtered out all paragraphs containing either of these phrases during the scraping process. As shown in the example, the content in the red box is “Photo by Xinhua News Agency journalist Yan Yan”
+
+![An Example of Captions Under Inserted Images](pictures/pic1.png)
+
+```{r, eval=FALSE}
+# Base URL
+base_url <- "https://jhsjk.people.cn/result?form=706&else=501"
+
+## Scraping id and urls
+# Function to scrape article IDs from a single page
+scrape_article_ids <- function(page_number) {
+  # Update the URL for the specific page (adjust if pagination requires POST requests)
+  page_url <- paste0(base_url, "&page=", page_number)
+  
+  # Fetch and parse the HTML content
+  page_content <- read_html(page_url)
+  
+  # Extract article IDs from the href attributes
+  article_ids <- page_content %>%
+    html_nodes("a") %>% # Select all <a> tags
+    html_attr("href") %>% # Get the href attribute
+    grep("^article/", ., value = TRUE) %>% # Filter hrefs that start with "article/"
+    sub("article/", "", .) # Remove the "article/" prefix to get just the ID
+  
+  return(article_ids)
+}
+
+# Iterate through multiple pages
+all_article_ids <- c()
+max_pages <- 85 # Adjust based on the number of pages available
+for (i in 1:max_pages) {
+  ids <- scrape_article_ids(i)
+  all_article_ids <- c(all_article_ids, ids)
+}
+
+# Remove duplicates
+all_article_ids <- unique(all_article_ids)
+
+
+article_base_url <- "https://jhsjk.people.cn/article/"
+
+# Construct full article URLs
+article_urls <- paste0(article_base_url, all_article_ids)
+
+sampled_urls <- sample(article_urls, 50)
+
+View(article_urls)
+class(article_urls)
+
+# Function to scrape title, source, date, and text from an article
+scrape_article_data <- function(article_url){
+  # Read the article page
+  page <- read_html(article_url)
+  
+  # Extract the title (from <h1>)
+  title <- page %>%
+    html_node("h1") %>%
+    html_text(trim = TRUE)
+  
+  # Extract the date (from <h3>)
+  date <- page %>%
+    html_nodes("div.d2txt_1") %>%
+    html_text(trim = TRUE) %>%
+    str_extract("发布时间：\\d{4}-\\d{2}-\\d{2}") %>%
+    str_remove("发布时间：")
+  
+  # Extract the text (from <p> tags with specific style)
+  paragraphs <- page %>%
+    html_nodes("div.d2txt_con p") %>%
+    html_text(trim = TRUE)
+  
+  # remove paragraphs containing “新华社” or "供图"
+  filtered_paragraphs <- paragraphs[!str_detect(paragraphs, "新华社|供图")]
+  
+  # collapse to one paragraph
+  text <- paste(filtered_paragraphs, collapse = " ")
+  
+  # Return as a data frame row
+  return(data.frame(
+    title = title,
+    date = date,
+    text = text,
+    url = article_url,
+    stringsAsFactors = FALSE
+  ))
+}
+
+# Initialize an empty data frame
+article_data <- data.frame(title = character(),
+                           date = character(),
+                           text = character(),
+                           url = character(),
+                           stringsAsFactors = FALSE)
+
+for (url in article_urls) {
+  print(paste("Scraping:", url)) # To monitor progress
+  tryCatch({
+    article_data <- rbind(article_data, scrape_article_data(url))
+  }, error = function(e) {
+    print(paste("Error scraping:", url, "->", e$message))
+  })
+  Sys.sleep(1) # Wait for 2 seconds between requests
+}
+
+final_result <- article_data %>% filter(!is.na(date))
+
+
+# Save
+write.csv(final_result, "xispeak.csv", row.names = FALSE)
+```
+
+### 1.3 A Overview of the Raw Data
+
+```{r}
+xispeak <- read.csv("data/xispeak.csv")
+
+xispeak <- xispeak %>%
+  mutate(text_length = nchar(text)) %>% 
+  mutate(date = ymd(date))
+
+ggplot(xispeak, aes(x = date, y = text_length)) +
+  geom_point(alpha = 0.5, color = "blue") + 
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +  
+  labs(title = "Text Length Over Time",
+       x = "Year",
+       y = "Number of Characters in Text") +
+  theme_minimal()
+
+xispeak <- xispeak %>% select(-text_length)
+```
+
+As shown in the figure, most documents have a stable length of within 10,000 characters. Over time, the density of documents has increased, especially after 2019, which may reflect Xi Jinping’s consolidation of power and control over the propaganda apparatus. Meanwhile, the occurrence of outliers in text length has shown a declining trend, possibly indicating that as Xi Jinping ages and his physical stamina declines, he is no longer as suited to delivering lengthy speeches.
+
+## 2. Data Preprocessing: Distinguishing Speeches and News Reports
+
+After reviewing some sample of these documents, another issue arose. These documents were not all original versions of speech transcripts; at least one-third of the content consisted of media reports on the speeches. Therefore, to filter out the speech transcripts, I plan to train a supervised mechine learning model to classify the documents.
+
+Therefore, I sampled 200 documents from the 847 observations and labeled them manually (speech = 1 or 0).
+
+```{r, eval=FALSE}
+set.seed(20250116)
+
+sample_result <- xispeak[sample(nrow(xispeak), 200), ]
+write.csv(sample_result, "data/xispeak_sample.csv", row.names = FALSE)
+```
+
+### 2.1 Training a Random Forest Model
+
+After labeling 200 documents, I leveraged the distinct differences in language style between speech transcripts and news reports. For example, words like “dear” and ”(dear) colleague” frequently appear in speech transcripts but are rarely found in news reports. In contrast, terms such as “Xi Jinping,” “point out,” and “emphasize” are commonly used in news reports but seldom appear in speech transcripts. Based on these observations, I compiled a list of several dozen such words and punctuation marks and used their frequency as features to predict document type using a random forest model.
+
+```{r}
+labeled_sample <- read.csv("data/xispeak_sample_labeled.csv")
+
+data <- labeled_sample %>% select(text, speech, url)
+data$speech <- as.factor(data$speech)
+
+target_words <- c("指出", "强调", "习近平", "习近平总书记", "习近平指出", "同志", "同事", "讲话", "文章", "尊敬的", "！", "：", "整理", "主持", "会议", "谈", "发言", "选编", "编者", "（", "《" , "■", "报告", "的一部分", "习近平说", "习近平提出", "会议认为", "会议指出", "出席活动", "的讲话", "节录", "讲话的一部分", "政治局", "日", "的讲话》", "的讲话）", "主席令")
+
+for (word in target_words) {
+  data[[word]] <- sapply(data$text, function(x) str_count(x, word))
+}
+
+# split sample into training and testing sets
+set.seed(20250129)
+
+split <- initial_split(data, prop = 0.8)
+train_data <- training(split)
+test_data <- testing(split)
+
+#create recipe
+recipe <- recipe(speech ~ ., data = data %>% select(-text, -url))
+
+# create random forest model
+model <- rand_forest(
+  mode = "classification",
+  mtry = 2,
+  trees = 500
+) %>%
+  set_engine("randomForest")
+
+# create workflow
+workflow <- workflow() %>%
+  add_recipe(recipe) %>%
+  add_model(model)
+
+# fit model
+fitted_model <- workflow %>%
+  parsnip::fit(data = train_data)
+
+# prediction
+predictions <- predict(fitted_model, test_data)
+
+# evaluate prediction
+confusion_matrix <- confusionMatrix(
+  factor(predictions$.pred_class),   # predicted category
+  factor(test_data$speech)   # actual category
+)
+
+print(confusion_matrix)
+```
+
+The confusion matrix tells us that the random forest model did a perfect job in predicting document types, with an accuracy of 100%.
+
+### 2.2 Fit the Model to Unlabeled Documents
+
+The next step is fitting the model to the 847 - 200 = 647 unlabeled documents.
+
+```{r}
+xispeak <- read.csv("data/xispeak.csv")
+
+non_sample_result <- xispeak %>%
+  anti_join(labeled_sample, by = "url")
+
+for (word in target_words) {
+  non_sample_result[[word]] <- sapply(non_sample_result$text, function(x) str_count(x, word))
+}
+
+non_sample_predictions <- predict(fitted_model, non_sample_result)
+
+non_sample_combined <- cbind(non_sample_result, non_sample_predictions) %>% 
+  select(title, date, text, prediction = .pred_class, url)
+
+table(non_sample_combined$prediction)
+
+write.csv(non_sample_combined, "data/predicted.csv", row.names = FALSE)
+```
+
+A total of 439 documents were predicted as speech transcripts, while 208 were identified as news reports. Guided by these predictions, I manually validated the results by reviewing the first few sentences of each document. This process allowed us to generate a confusion matrix to assess the accuracy of the predictions.
+
+During the validation process, I noticed that some documents were nearly identical but had been collected twice because they were published by different media outlets. I manually removed 18 duplicate documents; however, there may still be additional duplicates that remain undetected. I will further address this issue in section 3.3.
+
+```{r}
+val_pred <- read.csv("data/val_pred.csv")
+
+confusion_matrix <- confusionMatrix(
+  factor(val_pred$prediction),   # predicted category
+  factor(val_pred$actual)   # actual category
+)
+
+print(confusion_matrix)
+```
+
+The confusion matrix reveals that 16 news reports were misclassified as speech transcripts, while only one speech transcript was incorrectly identified as a news report. The overall accuracy of the model stands at an impressive 97.3%. However, the model exhibits a significantly higher tendency to misclassify news reports as speech transcripts. Addressing this issue could be a valuable direction for future research.
+
+### 2.3 Combining Two Labeled Datasets
+
+```{r}
+non_sample_labeled <- val_pred %>% select(title, date, text, speech = actual, url)
+
+categorized <- rbind(non_sample_labeled, labeled_sample) %>% arrange(desc(date))
+
+write.csv(categorized, "data/categorized_data.csv", row.names = FALSE)
+```
+
+Now that we have identified the document types, we can visualize the text length over time separately for speech transcripts and news reports.
+
+```{r}
+categorized <- categorized %>%
+  mutate(text_length = nchar(text)) %>% 
+  mutate(date = ymd(date)) %>% 
+  mutate(type = ifelse(speech == 1, "speech transcript", "news report"))
+
+ggplot(categorized, aes(x = date, y = text_length)) +
+  geom_point(alpha = 0.5, aes(color = type)) +  
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +  
+  labs(title = "Text Length Over Time",
+       x = "Year",
+       y = "Number of Characters in Text",
+       color = "Document Type") +  
+  theme_minimal() +
+  theme(legend.position = "bottom") 
+```
+
+Obviously, speech transcripts are longer than news reports, on average.
+
+## However ...
+
+The above supervised machine learning approach is based on domain knowledge. However, in reality, we do not always have such insights for every task. Therefore, in this section, this paper will conduct a more traditional supervised machine learning approach to classify speeches transcripts and news reports using all features (rather than only a subset of keywords) and compare the performance of different models.
+
+I performed 10-fold cross-validation for each model and calculated the average accuracy.
+
+## 3. Data Preprocessing: Data Cleaning and cutting
+
+### 3.1 Clean Contains Before and After Text
+
+Although we have now identified the speech transcripts, the text remains in its raw form, containing various “noise” elements. These include titles, the speaker’s name (Xi Jinping) appearing before the speech content, and source information, such as the publishing newspaper and the editor’s name, appended at the end.
+
+Additionally, for URLs containing videos, any string starting with “showPlayer” must be identified and removed. Furthermore, some speeches include an introductory note about the source, such as “※This is a part of the speech from … meeting,” which appears at the end of the text. All such introductions begin with “※这是” (※This is), making them easier to detect and process.
+
+```{r, eval=FALSE}
+# get all speeches
+clean <- categorized %>%
+  mutate(text = str_replace(text, ".* 习近平 ", ""), # remove speaker's name and the text before it
+         text = str_replace(text, ".*　习近平 ", ""),
+         text = str_replace(text, ".* 习 近 平 ", ""),
+         text = str_replace(text, "showPlayer\\S*", ""), # remove "showPlayer ..."
+         text = str_replace(text, "※这是.*", ""), # remove source introduction and the text after it
+         text = str_replace(text, "《 人民日报 》.*", ""), # remove source newspaper and the text after it
+         text = str_replace(text, "\\(责编.*", "")) #remove editor and the text after it
+```
+
+### 3.2 Clean Summaries Before Text
+
+After removing extraneous content from both the beginning and end of the text, another source of “language pollution” is the editorial summaries placed before the main content. Fortunately, each point in these summaries begins with the symbol “■,” making them easy to identify and filter out.
+
+```{r, eval=FALSE}
+clean <- clean %>%
+  mutate(text = str_remove_all(text, "■ [^ ]* ")) %>% 
+  mutate(text = str_remove_all(text, "■[^ ]* "))
+
+write.csv(clean, "data/clean.csv", row.names = FALSE)
+```
+
+### 3.3 Chinese word segmentation and remove stop words
+
+Unlike English, Chinese text does not naturally include spaces between words. Therefore, it must first be segmented into tokens with spaces before applying `corpus()`. For this task, I use [pkuseg](https://github.com/lancopku/pkuseg-python?tab=readme-ov-file), a Chinese word segmentation tool developed by Peking University. Since **pkuseg** is currently only available in Python, I export the cleaned data in the final preprocessing step and then re-import it after performing word segmentation in Python.
+
+The developers of **pkuseg** compared its performance with two other word segmentation tools, **jieba** and **THULAC**, and found that pkuseg consistently achieved a higher average F-score across various datasets. This superior performance makes it my preferred choice for Chinese word segmentation.
+
+![F-score of three Chinese word cutters](pictures/pic2.png)
+
+Besides, the Baidu stopwords list (including punctuation) is loaded and ready to use in `tokens_remove()`.
+
+```{r}
+clean_seg <- read.csv("data/clean_seg.csv") %>%
+  mutate(text = ifelse(text == "nan", "", text))
+
+#add Baidu Chinese stopwords (which already contains punctuation)
+stopwords_cn <- read_lines("data/cn_stopwords.txt")
+```
+
+## 4. Supervised Machine Learning: classifying speeches and news reports
+
+After data preprocessing is complete, the data can be used for supervised machine learning to classify speeches transcripts and news reports using all features.
+
+I applied and compared three models: **Naive Bayes**, **Lasso**, and **Ridge**. It is worth noting that the default behavior of `tokens()` is to automatically tokenize Chinese text, which is not desirable in this case, since meaningful language units have already been separated by spaces in the previous step. Therefore, it is necessary to set `what = "fastest"` to ensure that `tokens()` splits the text based solely on spaces.
+
+In addition, I performed 10-fold cross-validation for each model and calculated the average accuracy. I then trained each model on the entire training set and used it to make predictions on the test set, from which I derived the confusion matrix.
+
+```{r}
+set.seed(20250322)
+
+# Get the only two variables that SML needs
+sml <- clean_seg %>% select(text, type)
+
+# ---- Step 1: Train-Test Split (80/20) 
+train_indices <- createDataPartition(sml$type, p = 0.8, list = FALSE)
+train_set <- sml[train_indices, ]
+test_set  <- sml[-train_indices, ]
+```
+
+### 4.1 Native Bayes
+
+```{r}
+# ---- Step 2: Create 10-Folds for Cross-Validation 
+folds <- createFolds(train_set$type, k = 10, list = TRUE)
+
+# ---- Step 3: Perform k-Fold Cross-Validation 
+cv_results_nb <- lapply(folds, function(test_indices) {  
+  
+  # Split into training and validation 
+  validation_cv <- train_set[test_indices, ]
+  train_cv <- train_set[-test_indices, ]
+  
+  # Process training data -> prepare DFM
+  train_tokens_cv <- tokens(train_cv$text, what = "fastest", remove_numbers = TRUE) %>% 
+  tokens_remove(stopwords_cn)
+  train_dfm_cv <- dfm(train_tokens_cv)
+  
+  # Process validation data -> prepare DFM 
+  validation_tokens_cv <- tokens(validation_cv$text, what = "fastest", remove_numbers = TRUE) %>%
+    tokens_remove(stopwords_cn)
+  validation_dfm_cv <- dfm(validation_tokens_cv) %>%
+    dfm_match(features = featnames(train_dfm_cv))  # Ensure same feature set
+  
+  # Train Naïve Bayes Model on training fold
+  nb_model <- textmodel_nb(train_dfm_cv, train_cv$type, smooth = 1, prior = "docfreq")
+  
+  # Predict and Evaluate on Validation Set
+  predicted_cv <- predict(nb_model, newdata = validation_dfm_cv)
+  cv_cmat <- confusionMatrix(table(predicted_cv, validation_cv$type))
+  
+  return(cv_cmat$overall['Accuracy'])  # Store accuracy for this fold
+})
+
+# Print cross-validation results
+mean_cv_accuracy_nb <- mean(unlist(cv_results_nb))
+print(paste("Mean CV Accuracy:", round(mean_cv_accuracy_nb, 4)))
+```
+
+Now, apply the model to the whole training data.
+
+```{r}
+# ---- Step 4: Train Final Model on Full Training Data
+train_tokens <- tokens(train_set$text, what = "fastest", remove_numbers = TRUE) %>% 
+    tokens_remove(stopwords_cn)
+train_dfm <- dfm(train_tokens)
+
+test_tokens <- tokens(test_set$text, what = "fastest", remove_numbers = TRUE) %>% 
+    tokens_remove(stopwords_cn)
+test_dfm <- dfm(test_tokens) %>%
+  dfm_match(features = featnames(train_dfm))  # Ensure same feature set
+
+# Train Naïve Bayes on Full Training Set
+final_nb_model <- textmodel_nb(train_dfm, train_set$type, smooth = 1, prior = "docfreq")
+
+# ---- Step 5: Predict and Evaluate on Test Set 
+predicted_nb <- predict(final_nb_model, newdata = test_dfm)
+cmat_nb <- confusionMatrix(table(predicted_nb, test_set$type))
+
+# Print test results
+print(cmat_nb)
+```
+
+### 4.2 Lasso Regression
+
+```{r}
+train_set$speech <- fct_relevel(as_factor(train_set$type), "speech transcript")
+test_set$speech  <- fct_relevel(as_factor(test_set$type), "speech transcript")
+
+# ---- Step 4: Train a Lasso Model with Cross-Validation
+lasso <- cv.glmnet(
+  x = as.matrix(train_dfm), y = train_set$speech,  # Convert dfm to matrix
+  family = "binomial", alpha = 1, nfolds = 10,  # Logistic regression (binomial); Lasso (alpha = 1); 5-fold Cross-Validation
+  intercept = TRUE, type.measure = "class"
+)
+
+# ---- Step 6: Predict on Test Set 
+predicted_lasso <- predict(lasso, newx = test_dfm, type = "class")
+
+# ---- Step 7: Evaluate Performance with Confusion Matrix ----
+cmat_lasso <- confusionMatrix(table(fct_rev(test_set$speech), predicted_lasso))
+cmat_lasso
+```
+
+### 4.3 Ridge Regression
+
+```{r}
+# Train a Ridge regression model (alpha = 0 for Ridge)
+ridge <- cv.glmnet(
+  x = train_dfm, y = train_set$speech,
+  family = "binomial", alpha = 0, nfolds = 10,
+  intercept = TRUE, type.measure = "class"
+)
+
+# Predict on the test set
+predicted_ridge <- predict(ridge, newx = test_dfm, type = "class")
+
+# Confusion matrix for Ridge
+cmat_ridge <- confusionMatrix(table(fct_rev(test_set$speech), predicted_ridge))
+cmat_ridge
+```
+
+```{r}
+sml_results <- data.frame(
+  Model = c("Naive Bayes", "Lasso", "Ridge"),
+  Accuracy = c(
+    cmat_nb$overall["Accuracy"],
+    cmat_lasso$overall["Accuracy"],
+    cmat_ridge$overall["Accuracy"]
+  ),
+  Lower = c(
+    cmat_nb$overall["AccuracyLower"],
+    cmat_lasso$overall["AccuracyLower"],
+    cmat_ridge$overall["AccuracyLower"]
+  ),
+  Upper = c(
+    cmat_nb$overall["AccuracyUpper"],
+    cmat_lasso$overall["AccuracyUpper"],
+    cmat_ridge$overall["AccuracyUpper"]
+  )
+)
+
+ggplot(sml_results, aes(x = Model, y = Accuracy)) +
+  geom_point(size = 3, color = "#0072B2") +
+  geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 0.2, color = "gray40") +
+  ylim(0, 1) +
+  theme_minimal() +
+  labs(title = "Model Accuracy with 95% Confidence Intervals",
+       y = "Accuracy", x = "Model")
+```
+
+Overall, Lasso demonstrated the best performance, achieving an accuracy of 0.9758 and outperforming the random forest model I previously built using domain knowledge. Lasso outperformed Ridge likely because the classification task between speech transcripts and news reports involves a large amount of noise, as both types of documents share many political terms. However, only a small number of key features truly distinguish the two. This may also explain the relatively modest performance of Naive Bayes. Lasso is able to shrink the influence of noisy features to zero and effectively identify the key discriminative features, whereas Ridge still assigns weights to noisy terms, which reduces predictive accuracy.
+
+Next, I was curious to see whether the most discriminative words identified by the Lasso regression aligned with the key distinguishing terms I previously identified in Section 2.1 based on domain knowledge.
+
+```{r}
+# get coefficients in the best model (with lowest lambda)
+coef_df <- coef(lasso, s = lasso$lambda.min) %>% 
+  as.matrix() %>% as.data.frame()
+
+colnames(coef_df) <- "coefficient"
+
+# create feature variable using row names
+coef_df$feature <- rownames(coef_df)
+
+# remove intercept
+coef_df <- coef_df[coef_df$feature != "(Intercept)", ]
+
+# Top words with positive coefficients
+head(coef_df[order(coef_df$coefficient, decreasing = TRUE), ], 10)
+
+# Top words with negative coefficients
+head(coef_df[order(coef_df$coefficient), ], 10)
+```
+
+The results show that the most discriminative words are highly consistent with the keywords I identified. The two words most strongly associated with news reports are “Jinping” and “Xi Jinping,” which makes intuitive sense, as it is unlikely that Xi Jinping would mention his own name in a speech. On the other hand, the word most strongly associated with speech transcripts is “thank you,” which also aligns with expectations, since it frequently appears in speeches but is rarely used in news articles.
+
+After distinguishing between news reports and speech transcripts, the next step is to focus exclusively on analyzing the speeches.
+
+## 5. Remove Duplicate Speeches
+
+As noted in Section 2.2, duplicate documents still need to be identified and removed. The overall strategy is applying cosine similarity to identify potential duplicate speeches.
+
+```{r}
+speech_seg <- clean_seg %>% 
+  filter(speech == 1) %>% rowid_to_column()
+```
+
+After word segmentation, we can follow the traditional workflow of `corpus()`, `tokens()`, `dmf()`. Since Chinese does not have word inflections due to tense or other grammatical changes, there is no need for lowercasing, lemmatizing, or stemming, so I skipped these steps.
+
+```{r}
+speech_corp <- corpus(speech_seg, 
+               docid_field = "rowid", 
+               text_field = "text") 
+```
+
+```{r}
+cos_sim <- speech_corp %>% 
+  tokens(what = "fastest", remove_numbers = TRUE) %>% 
+    tokens_remove(stopwords_cn) %>% 
+  dfm() %>% 
+  textstat_simil(method = "cosine")
+```
+
+Using the cosine similarity matrix, we can identify the most similar documents for each document and visualize the distribution of the highest cosine similarity scores across all documents.
+
+```{r}
+sim_matrix <- as.matrix(cos_sim)
+
+diag(sim_matrix) <- 0 # replace ones in the diagonal with zeros
+
+sim_df <- as_tibble(as.matrix(sim_matrix)) %>%
+  mutate(names = rownames(as.matrix(sim_matrix))) %>%
+  rowwise() %>%
+  mutate(
+    max_sim = max(c_across(-names)),  # get max similarity
+    dup_id = colnames(sim_matrix)[which.max(c_across(-names))]  # get the id of potential duplicate document
+  ) %>%
+  ungroup() %>%
+  select(names, dup_id, max_sim)
+
+head(sim_df)
+```
+
+```{r}
+ggplot(sim_df, aes(x = max_sim)) +
+  geom_histogram(binwidth = 0.02, fill = cb_palette[2], color = "black", alpha = 0.5, linewidth = 0.3) +
+  labs(
+    title = "Distribution of Maximum Similarity Scores",
+    x = "Maximum Similarity",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+As illustrated in the graph, over 250 documents exhibit a maximum cosine similarity exceeding 0.98, indicating duplicate documents as a significant issue. Interestingly, there are few documents with a cosine similarity between 0.96 and 0.98, suggesting that 0.96 could serve as an optimal threshold for identifying duplicates.
+
+When dealing with identical documents, it is logical to retain the earlier version, as it is closer to the original date when the speech was delivered.
+
+```{r}
+dup <- sim_df %>% 
+  filter(max_sim > 0.96) %>% # filter all duplicate documents
+  filter(names < dup_id) # filter latter documents 
+
+speech_seg_filtered <- speech_seg %>%
+  filter(!(rowid %in% dup$names)) # remove duplicate documents
+```
+
+After removing duplicate documents, let's see the new distribution of maximum similarity scores.
+
+```{r}
+speech_seg_filtered <- speech_seg_filtered %>% 
+  select(-rowid) %>% 
+  rowid_to_column() #renew rowid
+
+speech_corp <- corpus(speech_seg_filtered, 
+               docid_field = "rowid", 
+               text_field = "text") 
+
+cos_sim <- speech_corp %>% 
+  tokens(what = "fastest", remove_numbers = TRUE) %>% 
+  tokens_remove(stopwords_cn) %>% 
+  dfm() %>% 
+  textstat_simil(method = "cosine")
+
+sim_matrix <- as.matrix(cos_sim)
+
+diag(sim_matrix) <- 0
+
+new_sim_df <- as_tibble(as.matrix(sim_matrix)) %>%
+  mutate(names = rownames(as.matrix(sim_matrix))) %>%
+  rowwise() %>%
+  mutate(
+    max_sim = max(c_across(-names)),  # get max similarity
+    dup_id = colnames(sim_matrix)[which.max(c_across(-names))]  # get the id of potential duplicate document
+  ) %>%
+  ungroup() %>%
+  select(names, dup_id, max_sim)
+
+ggplot(new_sim_df, aes(x = max_sim)) +
+  geom_histogram(binwidth = 0.02, fill = cb_palette[2], color = "black", alpha = 0.5, linewidth = 0.3) +
+  labs(
+    title = "Distribution of Maximum Similarity Scores",
+    x = "Maximum Similarity",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+As illustrated in the graph, only 22 identical documents remain, indicating that the duplication issue has been largely resolved. The same approach can be applied to address any remaining duplicate documents.
+
+```{r}
+new_dup <- new_sim_df %>% 
+  filter(max_sim > 0.96) %>% 
+  filter(names < dup_id)
+
+speech_seg_filtered <- speech_seg_filtered %>%
+  filter(!(rowid %in% new_dup$names))
+```
+
+```{r}
+speech_seg_filtered <- speech_seg_filtered %>% 
+  select(-rowid) %>% 
+  rowid_to_column() #renew rowid
+
+speech_corp <- corpus(speech_seg_filtered, 
+               docid_field = "rowid", 
+               text_field = "text") 
+
+cos_sim <- speech_corp %>% 
+  tokens(what = "fastest", remove_numbers = TRUE) %>% 
+  tokens_remove(stopwords_cn) %>% 
+  dfm() %>% 
+  textstat_simil(method = "cosine")
+
+sim_matrix <- as.matrix(cos_sim)
+
+diag(sim_matrix) <- 0
+
+new_sim_df <- as_tibble(as.matrix(sim_matrix)) %>%
+  mutate(names = rownames(as.matrix(sim_matrix))) %>%
+  rowwise() %>%
+  mutate(
+    max_sim = max(c_across(-names)),  # get max similarity
+    dup_id = colnames(sim_matrix)[which.max(c_across(-names))]  # get the id of potential duplicate document
+  ) %>%
+  ungroup() %>%
+  select(names, dup_id, max_sim)
+
+ggplot(new_sim_df, aes(x = max_sim)) +
+  geom_histogram(binwidth = 0.02, fill = cb_palette[2], color = "black", alpha = 0.5, linewidth = 0.3) +
+  labs(
+    title = "Distribution of Maximum Similarity Scores",
+    x = "Maximum Similarity",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+As illustrated in the graph, now there are no same documents. All duplicated documents were removed.
+
+```{r}
+write.csv(speech_seg_filtered, "data/speech_filtered.csv", row.names = FALSE)
+```
+
+## 6 Unsupervised Machine Learning
+
+### 6.1 Determine The Optimal Number of Topics
+
+In this section, I plan to use **LDA** to extract topics from the speeches. The first issue to address is determining the optimal number of topics. After attempting to tune this using perplexity, I found the training time to be too long. Therefore, I decided to use `FindTopicsNumber()`, which not only runs more efficiently but also provides multiple metrics, offering more comprehensive information to help determine the appropriate number of topics.
+
+```{r}
+dfm_speech <- speech_corp %>% 
+  tokens(what = "fastest", remove_numbers = TRUE) %>% 
+  tokens_remove(stopwords_cn) %>% 
+  dfm() %>% 
+  dfm_trim(min_termfreq = 5, min_docfreq = 3)
+```
+
+```{r}
+#| cache: true
+result <- FindTopicsNumber(
+dfm_speech,
+topics = seq(2, 25, by = 1),
+metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"),
+method = "Gibbs",
+control = list(seed = 1234),
+mc.cores = 2L
+)
+
+FindTopicsNumber_plot(result)
+```
+
+As shown in the figure, the Deveaud2014 metric reaches a local maximum when the number of topics is 18. However, when the number increases to 19, the Griffiths2004 metric continues to rise, the CaoJuan2009 metric reaches a local minimum, and the Deveaud2014 metric does not decline. Taking all these factors into account, I chose 19 as the optimal number of topics.
+
+### 6.2 Apply LDA
+
+After experimenting with different values of alpha (document–topic distribution) and delta (topic–word distribution), I found that setting alpha to 0.1 and using the default value for delta produced topics that were sufficiently interpretable.
+
+```{r}
+#| cache: true
+lda <- LDA(dfm_speech, k = 19, method = "Gibbs", control = list(alpha=0.1, verbose = 25L, seed = 1234, burnin = 100, iter = 500))
+
+terms <- get_terms(lda, 10)
+
+# convert terms to a data frame for visualization
+terms_df <- as_tibble(terms) %>%
+  janitor::clean_names() %>%
+  pivot_longer(cols = contains("topic"), names_to = "topic", values_to = "words") %>%
+  group_by(topic) %>%
+  summarise(words = list(words)) %>%  # Collect words into a list per topic
+  mutate(words = map(words, paste, collapse = ", ")) %>%
+  unnest()
+
+terms_df
+```
+
+```{r}
+beta_lda <- tidy(lda, matrix = "beta")
+
+# top terms for each topic
+beta_lda_top_terms <- beta_lda %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+showtext_auto()
+
+beta_lda_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+```
+
+Overall, the LDA demonstrated good performance, with most topics being very clear.
+
+| Topic Number | Topic Label | Top Keywords |
+|------------------|------------------|-------------------------------------|
+| **Topic 1** | Chinese culture and civilization | 文化 (culture), 文明 (civilization), 民族 (ethnicity/nation), 文艺 (literature and art), 历史 (history), 人民 (people), 中华民族 (Chinese nation), 中华 (China/Chinese), 中国 (China), 精神 (spirit) |
+| **Topic 2** | Poverty alleviation | 脱贫 (poverty alleviation), 贫困 (poverty), 扶贫 (poverty relief), 地区 (region), 攻坚 (tackle tough issues), 工作 (work), 群众 (the masses), 农村 (rural areas), 人口 (population), 贫 (poor) |
+| **Topic 3** | Youth and Education | 青年 (youth), 广大 (broad/massive), 劳动 (labor), 学生 (students), 教育 (education), 中国 (China), 中 (in/among), 工作 (work), 精神 (spirit), 社会 (society) |
+| **Topic 5** | Socialism with Chinese characteristics | 党 (Party), 发展 (development), 中国 (China), 社会主义 (socialism), 人民 (people), 建设 (construction), 坚持 (uphold), 新 (new), 现代化 (modernization), 特色 (characteristics) |
+| **Topic 6** | International trade | 经济 (economy), 发展 (development), 中国 (China), 开放 (openness), 合作 (cooperation), 世界 (world), 新 (new), 建设 (construction), 更 (more), 贸易 (trade) |
+| **Topic 7** | Economic development | 发展 (development), 经济 (economy), 新 (new), 社会 (society), 我国 (our country), 问题 (problems), 更 (more), 企业 (enterprises), 国家 (state), 中 (in) |
+| **Topic 11** | Hong Kong, Macau, Taiwan | 澳门 (Macau), 发展 (development), 同胞 (compatriots), 香港 (Hong Kong), 两岸 (cross-strait), 新 (new), 朋友 (friends), 人民政协 (CPPCC), 一国两制 (one country, two systems), 协商 (consultation) |
+| **Topic 12** | Covid control | 疫情 (pandemic), 防控 (prevention and control), 卫生 (hygiene), 工作 (work), 加强 (strengthen), 健康 (health), 公共 (public), 肺炎 (pneumonia), 抗疫 (anti-epidemic), 冠 (corona) |
+| **Topic 13** | Environment and ecology | 生态 (ecology), 建设 (construction), 环境 (environment), 保护 (protection), 体系 (system), 发展 (development), 推进 (promotion), 农业 (agriculture), 加快 (accelerate), 产业 (industry) |
+| **Topic 14** | Nationalist Ceremony for historical events | 中国人民 (Chinese people), 伟大 (great), 中国 (China), 中华民族 (Chinese nation), 人民 (people), 历史 (history), 民族 (nation/ethnic group), 世界 (world), 和平 (peace), 胜利 (victory) |
+| **Topic 15** | Technology and talents | 科技 (science and technology), 创新 (innovation), 人才 (talent), 技术 (technology), 发展 (development), 国家 (nation), 战略 (strategy), 我国 (our country), 新 (new), 领域 (field) |
+| **Topic 16** | Party discipline | 党 (Party), 政治 (politics), 干部 (cadre), 问题 (issue), 工作 (work), 治 (governance), 监督 (supervision), 加强 (strengthen), 党员 (Party member), 党内 (within the Party) |
+| **Topic 17** | Marxist ideology | 马克思主义 (Marxism), 理论 (theory), 党校 (Party school), 问题 (issue), 发展 (development), 学习 (study), 思想 (thought), 中国 (China), 哲学 (philosophy), 研究 (research) |
+| **Topic 19** | Rule by law | 国家 (state), 法治 (rule of law), 制度 (system), 依法 (according to law), 人民 (people), 法律 (law), 社会主义 (socialism), 民主 (democracy), 坚持 (uphold), 体系 (framework) |
+
+However, several topics remain unclear—for example, it is difficult to directly infer the themes of Topic 10 and Topic 18 based on their keywords.
+
+| Topic Number | Topic Label | Top Keywords |
+|------------------|------------------|-------------------------------------|
+| **Topic 10** | Hard to understand | 同志 (comrade), 党 (party), 人民 (people), 工作 (work), 革命 (revolution), 说 (say), 理想 (ideal), 领导 (leadership), 学习 (study), 事业 (cause) |
+| **Topic 18** | Reform, but in which area? | 改革 (reform), 全面 (comprehensive), 提出 (propose), 党 (Party), 重大 (major), 工作 (work), 新 (new), 推进 (advance), 深化 (deepen), 意见 (opinion) |
+
+In addition, there are three topics related to diplomacy. However, it is difficult to distinguish among them based on the keywords.
+
+| Topic Number | Topic Label | Top Keywords |
+|------------------|------------------|-------------------------------------|
+| **Topic 4** | International security? | 发展 (development), 世界 (world), 全球 (global), 各国 (all countries), 人类 (humankind), 国际 (international), 安全 (security), 中国 (China), 共同 (common/shared), 合作 (cooperation) |
+| **Topic 8** | BRICS? | 合作 (cooperation), 国家 (countries), 中方 (China), 发展 (development), 国际 (international), 金 (BRICS), 砖 (BRICS), 支持 (support), 共同 (common), 非洲 (Africa) |
+| **Topic 9** | Asia? | 中国 (China), 中 (China), 发展 (development), 关系 (relations), 合作 (cooperation), 亚洲 (Asia), 和平 (peace), 两国 (the two countries), 人民 (people), 共同 (common) |
+
+To answer this question, I plan to identify the three speeches with the highest topic probability (gamma) for each topic.
+
+```{r}
+gamma_lda <- tidy(lda, matrix = "gamma")
+
+top_docs_per_topic <- gamma_lda %>%
+  group_by(topic) %>%
+  slice_max(order_by = gamma, n = 3) %>%
+  arrange(topic, desc(gamma))
+
+speech_seg_filtered <- speech_seg_filtered %>%
+  mutate(document = as.character(rowid))
+
+top_docs_per_topic <- top_docs_per_topic %>%
+  left_join(speech_seg_filtered, by = "document")
+
+filtered_top_docs <- top_docs_per_topic %>% 
+  filter(topic %in% c(10, 18)) %>% 
+  select(topic, title)
+
+filtered_top_docs
+```
+
+After reading these speeches, I find that the three Topic 10 speeches were all delivered on the birthdays of dead early founding members of the Chinese Communist Party, suggesting that Topic 10 represents commemorative speeches for important Party figures. The three Topic 18 speeches, on the other hand, all focus on the modernization of the national governance system and governance capacity, indicating that Topic 18 concerns strengthening governance capacity.
+
+```{r}
+filtered_top_docs <- top_docs_per_topic %>% 
+  filter(topic %in% c(4, 8, 9)) %>% 
+  select(topic, title)
+
+filtered_top_docs
+```
+
+Furthermore, all three speeches under Topic 4 were delivered at the United Nations, suggesting that Topic 4 focuses on more abstract themes of peace and development for humanity, such as promoting the concept of a “community with a shared future for mankind.” The three speeches under Topic 8 were delivered at the Shanghai Cooperation Organization and BRICS summits, indicating that Topic 8 is more centered on promoting regional cooperation and development through multilateral diplomacy. As for Topic 9, two of the speeches were delivered in bilateral diplomatic settings—one during a meeting with the General Secretary of the Communist Party of Vietnam and the other with President Obama. The third speech, however, was a welcoming address at the APEC summit hosted in Beijing, which is somewhat puzzling.
+
+To further determine the distinction between Topic 9 and the previous two topics, I increased the number of keywords from 10 to 20.
+
+```{r}
+terms <- get_terms(lda, 20)
+
+# convert terms to a data frame for visualization
+terms_df <- as_tibble(terms) %>%
+  janitor::clean_names() %>%
+  pivot_longer(cols = contains("topic"), names_to = "topic", values_to = "words") %>%
+  group_by(topic) %>%
+  summarise(words = list(words)) %>%  # Collect words into a list per topic
+  mutate(words = map(words, paste, collapse = ", ")) %>%
+  unnest()
+
+filtered_topics <- terms_df %>%
+  filter(topic %in% c("topic_4", "topic_8", "topic_9"))
+
+print(filtered_topics)
+
+```
+
+After retrieving more keywords, I suddenly understood why Topic 9 includes both bilateral diplomatic speeches and the speech at the APEC welcome banquet held in Beijing (a multilateral occasion). Keywords in Topic 9 include terms like “friends” and “friendship,” which suggest that whether meeting with foreign leaders in bilateral settings or hosting guests at an event like APEC, the tone is meant to convey warmth and friendliness. Therefore, Topic 9 pertains to more personal diplomatic occasions.
+
+In contrast, Topic 8 frequently includes words like “Africa,” “China-Africa,” “regions,” as well as “cooperation,” “development,” “construction,” and “support.” These terms are more formal and reflect China’s commitment to promoting stability and development in the Global South.
+
+Lastly, Topic 4 is broader in scope, addressing “the world,” “global,” “humanity,” and “international” issues, while focusing on more abstract concepts such as “civilization” and “destiny.” Thus, Topic 4 centers on diplomatic principles and philosophies.
+
+In conclusion, we can understand the agenda of Xi Jinping through topic modeling:
+
+| Topic Number | Topic Label | Top Keywords |
+|------------------|------------------|-------------------------------------|
+| **Topic 1** | Chinese culture and civilization | 文化 (culture), 文明 (civilization), 民族 (ethnicity/nation), 文艺 (literature and art), 历史 (history), 人民 (people), 中华民族 (Chinese nation), 中华 (China/Chinese), 中国 (China), 精神 (spirit) |
+| **Topic 2** | Poverty alleviation | 脱贫 (poverty alleviation), 贫困 (poverty), 扶贫 (poverty relief), 地区 (region), 攻坚 (tackle tough issues), 工作 (work), 群众 (the masses), 农村 (rural areas), 人口 (population), 贫 (poor) |
+| **Topic 3** | Youth and Education | 青年 (youth), 广大 (broad/massive), 劳动 (labor), 学生 (students), 教育 (education), 中国 (China), 中 (in/among), 工作 (work), 精神 (spirit), 社会 (society) |
+| **Topic 4** | Diplomatic principles and philosophies | 发展 (development), 世界 (world), 全球 (global), 各国 (all countries), 人类 (humankind), 国际 (international), 安全 (security), 中国 (China), 共同 (common/shared), 合作 (cooperation) |
+| **Topic 5** | Socialism with Chinese characteristics | 党 (Party), 发展 (development), 中国 (China), 社会主义 (socialism), 人民 (people), 建设 (construction), 坚持 (uphold), 新 (new), 现代化 (modernization), 特色 (characteristics) |
+| **Topic 6** | International trade | 经济 (economy), 发展 (development), 中国 (China), 开放 (openness), 合作 (cooperation), 世界 (world), 新 (new), 建设 (construction), 更 (more), 贸易 (trade) |
+| **Topic 7** | Economic development | 发展 (development), 经济 (economy), 新 (new), 社会 (society), 我国 (our country), 问题 (problems), 更 (more), 企业 (enterprises), 国家 (state), 中 (in) |
+| **Topic 8** | Commitment to global south | 合作 (cooperation), 国家 (countries), 中方 (China), 发展 (development), 国际 (international), 金 (BRICS), 砖 (BRICS), 支持 (support), 共同 (common), 非洲 (Africa) |
+| **Topic 9** | Personal diplomacy | 中国 (China), 中 (China), 发展 (development), 关系 (relations), 合作 (cooperation), 亚洲 (Asia), 和平 (peace), 两国 (the two countries), 人民 (people), 共同 (common) |
+| **Topic 10** | Commemorate important Party figures | 同志 (comrade), 党 (party), 人民 (people), 工作 (work), 革命 (revolution), 说 (say), 理想 (ideal), 领导 (leadership), 学习 (study), 事业 (cause) |
+| **Topic 11** | Hong Kong, Macau, Taiwan | 澳门 (Macau), 发展 (development), 同胞 (compatriots), 香港 (Hong Kong), 两岸 (cross-strait), 新 (new), 朋友 (friends), 人民政协 (CPPCC), 一国两制 (one country, two systems), 协商 (consultation) |
+| **Topic 12** | Covid control | 疫情 (pandemic), 防控 (prevention and control), 卫生 (hygiene), 工作 (work), 加强 (strengthen), 健康 (health), 公共 (public), 肺炎 (pneumonia), 抗疫 (anti-epidemic), 冠 (corona) |
+| **Topic 13** | Environment and ecology | 生态 (ecology), 建设 (construction), 环境 (environment), 保护 (protection), 体系 (system), 发展 (development), 推进 (promotion), 农业 (agriculture), 加快 (accelerate), 产业 (industry) |
+| **Topic 14** | Nationalist Ceremony for historical events | 中国人民 (Chinese people), 伟大 (great), 中国 (China), 中华民族 (Chinese nation), 人民 (people), 历史 (history), 民族 (nation/ethnic group), 世界 (world), 和平 (peace), 胜利 (victory) |
+| **Topic 15** | Technology and talents | 科技 (science and technology), 创新 (innovation), 人才 (talent), 技术 (technology), 发展 (development), 国家 (nation), 战略 (strategy), 我国 (our country), 新 (new), 领域 (field) |
+| **Topic 16** | Party discipline | 党 (Party), 政治 (politics), 干部 (cadre), 问题 (issue), 工作 (work), 治 (governance), 监督 (supervision), 加强 (strengthen), 党员 (Party member), 党内 (within the Party) |
+| **Topic 17** | Marxist ideology | 马克思主义 (Marxism), 理论 (theory), 党校 (Party school), 问题 (issue), 发展 (development), 学习 (study), 思想 (thought), 中国 (China), 哲学 (philosophy), 研究 (research) |
+| **Topic 18** | Enhance governance capacity | 改革 (reform), 全面 (comprehensive), 提出 (propose), 党 (Party), 重大 (major), 工作 (work), 新 (new), 推进 (advance), 深化 (deepen), 意见 (opinion) |
+| **Topic 19** | Rule by law | 国家 (state), 法治 (rule of law), 制度 (system), 依法 (according to law), 人民 (people), 法律 (law), 社会主义 (socialism), 民主 (democracy), 坚持 (uphold), 体系 (framework) |
+
+### 6.3 STM
+
+The above analysis is static; a more meaningful approach would be to use a structural topic model (STM) to compare the thematic shifts between President Xi’s first and subsequent terms. For instance, if we believe that Xi has been tightening ideological control, we should expect to observe a greater number of ideology-related topics in his speeches during his second term.
+
+```{r}
+speech_seg_filtered <- speech_seg_filtered %>%
+  mutate(
+    xi_period = ifelse(as.Date(date) < as.Date("2018-03-17"), 0, 1)
+  )
+```
+
+```{r}
+speech_corp <- corpus(speech_seg_filtered, 
+               docid_field = "rowid", 
+               text_field = "text") 
+
+dfm_stm <- speech_corp %>% 
+  tokens(what = "fastest", 
+         remove_numbers = T,
+         remove_punct=T, 
+         remove_symbols=T, 
+         remove_separators=T) %>% 
+  tokens_remove(stopwords_cn) %>% 
+  dfm() %>% 
+  dfm_trim(min_termfreq = 5, min_docfreq = 3)
+
+stm_input <- convert(dfm_stm, to = "stm")
+```
+
+```{r}
+#| cache: true
+set.seed(123)
+
+stm_model <- stm(documents = stm_input$documents,
+                 vocab = stm_input$vocab,
+                 data = speech_seg_filtered,
+                 K = 19,
+                 prevalence = ~ xi_period,
+                 max.em.its = 75,
+                 init.type = "Spectral",
+                 verbose = FALSE)
+```
+
+```{r}
+topic_effects <- estimateEffect(1:19 ~ xi_period,
+                                stm_model,
+                                metadata = speech_seg_filtered,
+                                uncertainty = "Global")
+
+par(cex = 0.6)
+
+plot(topic_effects,
+     covariate = "xi_period",
+     cov.value1 = 1,
+     cov.value2 = 0,
+     model = stm_model,
+     method = "difference",
+     xlab = "Effect of Xi's 2nd Term (vs. 1st Term)",
+     main = "Effect of Xi Period on Topic Proportions",
+     labeltype = "frex",
+     n = 3)
+```
+
+Three topics that saw a significant increase in proportion during Xi’s second term were COVID-19, ecological issues, and multilateral diplomacy, while two topics that declined were personal diplomacy and commemorations of key Party figures. Surprisingly, ideology-related topics did not exhibit any notable change. Therefore, it is essential to adopt a broader historical perspective by comparing Xi’s rhetoric with that of his predecessors, especially Mao.
+
+## 7. Word Embedding
+
+Word embedding enables the comparisons by capturing subtle semantic shifts. To train word embeddings for other leaders, I introduced a new corpus consisting of officially published selected works of CCP leaders. Specifically, there are five volumes for Mao, and three volumes each for Deng Xiaoping, Jiang Zemin, and Hu Jintao.
+
+### 7.1 Train Word Embeddings
+
+#### 7.1.1 Word Embeddings of Xi
+
+The first step is to train the word embeddings, for which I chose to use GloVe.
+
+```{r}
+xi_toks <- speech_corp %>% 
+  tokens(what = "fastest", 
+         remove_numbers = T,
+         remove_punct=T, 
+         remove_symbols=T, 
+         remove_separators=T) %>% 
+  tokens_remove(stopwords_cn)
+
+xi_feats <-  dfm(xi_toks) %>% 
+  dfm_trim(min_termfreq = 10, min_docfreq = 5) %>% 
+  featnames()
+
+xi_toks_feats <- tokens_select(xi_toks,
+                            xi_feats,
+                            padding = TRUE)
+```
+
+```{r}
+WINDOW_SIZE <- 6 # size of the window for counting co-occurence
+DIM <- 300 # dimensions of the embeddings = size of word embeddings
+ITERS <- 100 # iterations of the models
+COUNT_MIN <- 10 # minimum count of words that we want to keep
+
+xi_toks_fcm <- fcm(xi_toks_feats, 
+                context = "window", 
+                window = WINDOW_SIZE, 
+                count = "frequency", 
+                tri = FALSE) # important to set tri = FALSE; keeps a full matrix
+
+head(xi_toks_fcm)
+```
+
+```{r}
+#| cache: true
+# Set parameters
+xi_glove <- GlobalVectors$new(rank = DIM, 
+                           x_max = 10,
+                           learning_rate = 0.05)
+
+# Fit in a pythonic style!
+start = Sys.time()
+
+# Train the model
+invisible(capture.output({
+  xi_wv_main <- xi_glove$fit_transform(xi_toks_fcm, 
+                                 n_iter = ITERS,
+                                 convergence_tol = 1e-3, 
+                                 n_threads = parallel::detectCores())
+}))
+end = Sys.time()
+print(end-start)
+```
+
+```{r}
+# (how the word appears in the context of other words; how the word is used)
+xi_word_vectors_context <- xi_glove$components
+
+# While both of word-vectors matrices can be used as result it is usually better 
+# (idea from GloVe paper, Pennington et al. 2014) to average or take a sum of main and context vector
+# main vector are thought to focus more on word meaning and word_vectors_context on relationships
+xi_word_vectors <- xi_wv_main + t(xi_word_vectors_context) # combined word embedding matrix
+dim(xi_word_vectors)  # returns number of words, embedding dimensions
+```
+
+After obtaining the 5395 × 300 word embedding matrix, I try to validate its quality by examining the nearest words to selected keywords.
+
+```{r}
+nearest_words <- function(word_vectors, word, n){
+  selected_vector = word_vectors[word,]
+  mult = as.data.frame(word_vectors %*% selected_vector) # dot product in R
+  mult %>%
+    rownames_to_column() %>%
+    rename(word = rowname,
+           similarity = V1) %>%
+    anti_join(get_stopwords(language = "en")) %>%
+    arrange(-similarity) %>%
+    dplyr::slice(1: n)
+}
+
+nearest_words(xi_word_vectors, "党中央", 5)
+```
+
+The words closest to “党中央” (the Party Central Committee) include “党中央” (the Party Central Committee) itself, “部署” (deployment), “领导” (leadership), “党” (party), and “决策” (decision-making), all of which are closely related to the role of the Party Central Committee. This suggests that the quality of the word embeddings is not a major concern.
+
+#### 7.1.2 Word Embeddings of Hu
+
+For Hu, I only have pdf version of his selected works (maybe because his works are published in 2016, which is too new to allow digitization). I used ABBYY (A powerful OCR software) to scan the PDFs into TXTs. After recognizing that paragraph separations can be caused by page change after reading the TXTs (which is not friendly for tasks like training word embedding), I determined to use combine all contents together and split it to sentences as basic chunks for training.
+
+```{r}
+book2sentence <- function(file_path, doc_name = NULL) {
+  if (is.null(doc_name)) {
+    doc_name <- tools::file_path_sans_ext(basename(file_path))
+  }
+
+  # data cleaning
+  text <- read_file(file_path) %>%
+    str_replace_all("\r", "") %>%
+    str_replace_all("[ 　]", "")
+
+  # split by sentence
+  sentences <- str_split(text, "。|！|？", simplify = FALSE)[[1]]
+  sentences <- str_trim(sentences)
+  sentences <- sentences[sentences != ""]
+
+  # per sentence per line dataframe
+  result <- tibble(
+    sentence = sentences,
+    doc = doc_name
+  )
+  
+  assign(doc_name, result, envir = .GlobalEnv)
+}
+```
+
+```{r}
+book2sentence("data/Hu1.txt", "Hu1")
+book2sentence("data/Hu2.txt", "Hu2")
+book2sentence("data/Hu3.txt", "Hu3")
+Hu <- bind_rows(Hu1, Hu2, Hu3)
+write_csv(Hu, "data/Hu.csv")
+```
+
+Then, I used **pkuseg** to segment sentences into tokens.
+
+```{r}
+Hu_seg <- read.csv("data/Hu_seg.csv")
+```
+
+```{r}
+hu_toks <- Hu_seg$sentence %>%
+  tokens(what = "fastest", 
+         remove_numbers = T,
+         remove_punct=T, 
+         remove_symbols=T, 
+         remove_separators=T) %>% 
+  tokens_remove(stopwords_cn)
+
+hu_feats <-  dfm(hu_toks) %>% 
+  dfm_trim(min_termfreq = 10, min_docfreq = 5) %>% 
+  featnames()
+
+hu_toks_feats <- tokens_select(hu_toks,
+                            hu_feats,
+                            padding = TRUE)
+```
+
+```{r}
+hu_toks_fcm <- fcm(hu_toks_feats, 
+                context = "window", 
+                window = WINDOW_SIZE, 
+                count = "frequency", 
+                tri = FALSE) # important to set tri = FALSE; keeps a full matrix
+
+head(hu_toks_fcm)
+```
+
+```{r}
+#| cache: true
+# Set parameters
+hu_glove <- GlobalVectors$new(rank = DIM, 
+                           x_max = 10,
+                           learning_rate = 0.05)
+
+# Fit in a pythonic style!
+start = Sys.time()
+
+# Train the model
+invisible(capture.output({
+  hu_wv_main <- hu_glove$fit_transform(hu_toks_fcm, 
+                                 n_iter = ITERS,
+                                 convergence_tol = 1e-3, 
+                                 n_threads = parallel::detectCores())
+}))
+end = Sys.time()
+print(end-start)
+```
+
+```{r}
+# (how the word appears in the context of other words; how the word is used)
+hu_word_vectors_context <- hu_glove$components
+
+# While both of word-vectors matrices can be used as result it is usually better 
+# (idea from GloVe paper, Pennington et al. 2014) to average or take a sum of main and context vector
+# main vector are thought to focus more on word meaning and word_vectors_context on relationships
+hu_word_vectors <- hu_wv_main + t(hu_word_vectors_context) # combined word embedding matrix
+dim(hu_word_vectors)  # returns number of words, embedding dimensions
+```
+
+#### 7.1.3 Word Embeddings of Mao, Deng, and Jiang
+
+For Mao, Deng, and Jiang, since their selected works were published much earlier (at least two decades), I collected the MOBI version of their selected works, which is much easier to be converted into TXT documents. Due to this feature, I have complete paragraphs for their works, so I adopted a different approach to separate books into sentences.
+
+```{r}
+book2para2sent <- function(file_path, doc_name = NULL) {
+  if (is.null(doc_name)) {
+    doc_name <- tools::file_path_sans_ext(basename(file_path))
+  }
+
+  # data cleaning
+  text <- read_file(file_path) %>%
+    str_replace_all("\r", "") %>%
+    str_replace_all("[ 　]", "")
+  
+  # book to paragraphs
+  text <- str_replace_all(text, "\n+", "\n")  # only keep one \n
+  paragraphs <- unlist(str_split(text, "\n")) # split into paragraphs
+
+  # paragraphs to sentences
+  sentences <- paragraphs %>%
+    map(~str_split(.x, "。|！|？")[[1]]) %>%
+    unlist() %>%
+    str_trim() %>%
+    .[. != ""]
+
+  # per sentence per line dataframe
+  result <- tibble(
+    sentence = sentences,
+    doc = doc_name
+  )
+  
+  assign(doc_name, result, envir = .GlobalEnv)
+}
+```
+
+Now we can train the word embeddings for Jiang.
+
+```{r}
+book2para2sent("data/Jiang1.txt", "Jiang1")
+book2para2sent("data/Jiang2.txt", "Jiang2")
+book2para2sent("data/Jiang3.txt", "Jiang3")
+Jiang <- bind_rows(Jiang1, Jiang2, Jiang3)
+write_csv(Jiang, "data/Jiang.csv")
+```
+
+Then, I used **pkuseg** to segment sentences into tokens.
+
+```{r}
+Jiang_seg <- read.csv("data/Jiang_seg.csv")
+```
+
+```{r}
+jiang_toks <- Jiang_seg$sentence %>%
+  tokens(what = "fastest", 
+         remove_numbers = T,
+         remove_punct=T, 
+         remove_symbols=T, 
+         remove_separators=T) %>% 
+  tokens_remove(stopwords_cn)
+
+jiang_feats <-  dfm(jiang_toks) %>% 
+  dfm_trim(min_termfreq = 10, min_docfreq = 5) %>% 
+  featnames()
+
+jiang_toks_feats <- tokens_select(jiang_toks,
+                            jiang_feats,
+                            padding = TRUE)
+```
+
+```{r}
+jiang_toks_fcm <- fcm(jiang_toks_feats, 
+                context = "window", 
+                window = WINDOW_SIZE, 
+                count = "frequency", 
+                tri = FALSE) # important to set tri = FALSE; keeps a full matrix
+
+head(jiang_toks_fcm)
+```
+
+```{r}
+#| cache: true
+# Set parameters
+jiang_glove <- GlobalVectors$new(rank = DIM, 
+                           x_max = 10,
+                           learning_rate = 0.05)
+
+# Fit in a pythonic style!
+start = Sys.time()
+
+# Train the model
+invisible(capture.output({
+  jiang_wv_main <- jiang_glove$fit_transform(jiang_toks_fcm, 
+                                 n_iter = ITERS,
+                                 convergence_tol = 1e-3, 
+                                 n_threads = parallel::detectCores())
+}))
+end = Sys.time()
+print(end-start)
+```
+
+```{r}
+# (how the word appears in the context of other words; how the word is used)
+jiang_word_vectors_context <- jiang_glove$components
+
+# While both of word-vectors matrices can be used as result it is usually better 
+# (idea from GloVe paper, Pennington et al. 2014) to average or take a sum of main and context vector
+# main vector are thought to focus more on word meaning and word_vectors_context on relationships
+jiang_word_vectors <- jiang_wv_main + t(jiang_word_vectors_context) # combined word embedding matrix
+dim(jiang_word_vectors)  # returns number of words, embedding dimensions
+```
+
+Then we can train the embeddings for Deng.
+
+```{r}
+book2para2sent("data/Deng1.txt", "Deng1")
+book2para2sent("data/Deng2.txt", "Deng2")
+book2para2sent("data/Deng3.txt", "Deng3")
+Deng <- bind_rows(Deng1, Deng2, Deng3)
+write_csv(Deng, "data/Deng.csv")
+```
+
+```{r}
+Deng_seg <- read.csv("data/Deng_seg.csv")
+```
+
+```{r}
+deng_toks <- Deng_seg$sentence %>%
+  tokens(what = "fastest", 
+         remove_numbers = T,
+         remove_punct=T, 
+         remove_symbols=T, 
+         remove_separators=T) %>% 
+  tokens_remove(stopwords_cn)
+
+deng_feats <-  dfm(deng_toks) %>% 
+  dfm_trim(min_termfreq = 10, min_docfreq = 5) %>% 
+  featnames()
+
+deng_toks_feats <- tokens_select(deng_toks,
+                            deng_feats,
+                            padding = TRUE)
+```
+
+```{r}
+deng_toks_fcm <- fcm(deng_toks_feats, 
+                context = "window", 
+                window = WINDOW_SIZE, 
+                count = "frequency", 
+                tri = FALSE) # important to set tri = FALSE; keeps a full matrix
+
+head(deng_toks_fcm)
+```
+
+```{r}
+#| cache: true
+# Set parameters
+deng_glove <- GlobalVectors$new(rank = DIM, 
+                           x_max = 10,
+                           learning_rate = 0.05)
+
+# Fit in a pythonic style!
+start = Sys.time()
+
+# Train the model
+invisible(capture.output({
+  deng_wv_main <- deng_glove$fit_transform(deng_toks_fcm, 
+                                 n_iter = ITERS,
+                                 convergence_tol = 1e-3, 
+                                 n_threads = parallel::detectCores())
+}))
+end = Sys.time()
+print(end-start)
+```
+
+```{r}
+# (how the word appears in the context of other words; how the word is used)
+deng_word_vectors_context <- deng_glove$components
+
+# While both of word-vectors matrices can be used as result it is usually better 
+# (idea from GloVe paper, Pennington et al. 2014) to average or take a sum of main and context vector
+# main vector are thought to focus more on word meaning and word_vectors_context on relationships
+deng_word_vectors <- deng_wv_main + t(deng_word_vectors_context) # combined word embedding matrix
+dim(deng_word_vectors)  # returns number of words, embedding dimensions
+```
+
+Lastly, we can train the embeddings for Mao.
+
+```{r}
+book2para2sent("data/Mao1.txt", "Mao1")
+book2para2sent("data/Mao2.txt", "Mao2")
+book2para2sent("data/Mao3.txt", "Mao3")
+book2para2sent("data/Mao4.txt", "Mao4")
+book2para2sent("data/Mao5.txt", "Mao5")
+Mao <- bind_rows(Mao1, Mao2, Mao3, Mao4, Mao5)
+write_csv(Mao, "data/Mao.csv")
+```
+
+```{r}
+Mao_seg <- read.csv("data/Mao_seg.csv")
+```
+
+```{r}
+mao_toks <- Mao_seg$sentence %>%
+  tokens(what = "fastest", 
+         remove_numbers = T,
+         remove_punct=T, 
+         remove_symbols=T, 
+         remove_separators=T) %>% 
+  tokens_remove(stopwords_cn)
+
+mao_feats <-  dfm(mao_toks) %>% 
+  dfm_trim(min_termfreq = 10, min_docfreq = 5) %>% 
+  featnames()
+
+mao_toks_feats <- tokens_select(mao_toks,
+                            mao_feats,
+                            padding = TRUE)
+```
+
+```{r}
+mao_toks_fcm <- fcm(mao_toks_feats, 
+                context = "window", 
+                window = WINDOW_SIZE, 
+                count = "frequency", 
+                tri = FALSE) # important to set tri = FALSE; keeps a full matrix
+
+head(mao_toks_fcm)
+```
+
+```{r}
+#| cache: true
+# Set parameters
+mao_glove <- GlobalVectors$new(rank = DIM, 
+                           x_max = 10,
+                           learning_rate = 0.05)
+
+# Fit in a pythonic style!
+start = Sys.time()
+
+# Train the model
+invisible(capture.output({
+  mao_wv_main <- mao_glove$fit_transform(mao_toks_fcm, 
+                                 n_iter = ITERS,
+                                 convergence_tol = 1e-3, 
+                                 n_threads = parallel::detectCores())
+}))
+end = Sys.time()
+print(end-start)
+```
+
+```{r}
+# (how the word appears in the context of other words; how the word is used)
+mao_word_vectors_context <- mao_glove$components
+
+# While both of word-vectors matrices can be used as result it is usually better 
+# (idea from GloVe paper, Pennington et al. 2014) to average or take a sum of main and context vector
+# main vector are thought to focus more on word meaning and word_vectors_context on relationships
+mao_word_vectors <- mao_wv_main + t(mao_word_vectors_context) # combined word embedding matrix
+dim(mao_word_vectors)  # returns number of words, embedding dimensions
+```
+
+After getting all the embeddings, I wrote a function allowing me to type into any two words to get the cosine similarity between them for Xi and his predecessors.
+
+```{r}
+# combine all the word vectors
+vec_list <- list(
+    Mao = mao_word_vectors,
+    Deng = deng_word_vectors,
+    Jiang = jiang_word_vectors,
+    Hu = hu_word_vectors,
+    Xi = xi_word_vectors
+  )
+```
+
+```{r}
+compare_word_similarity <- function(word1, word2, word1_en, word2_en) {
+  
+  leader_labels <- c("Mao (1949-1976)", "Deng (1978-1989)", "Jiang (1989-2002)", "Hu (2002-2012)", "Xi (2012-now)")
+  
+  get_cos_sim <- function(mat, w1, w2) {
+    if (!(w1 %in% rownames(mat)) || !(w2 %in% rownames(mat))) return(NA_real_)
+    v1 <- mat[w1, ]
+    v2 <- mat[w2, ]
+    sum(v1 * v2) / (sqrt(sum(v1^2)) * sqrt(sum(v2^2)))
+  }
+  
+  sim_df <- tibble(
+    leaders = factor(leader_labels, levels = leader_labels),  
+    cos_sim = sapply(vec_list, get_cos_sim, w1 = word1, w2 = word2)
+  )
+  
+  p <- ggplot(sim_df, aes(x = leaders, y = cos_sim, group = 1)) +
+  geom_line(linewidth = 1.2, color = "#2C77B8") +
+  geom_point(size = 3, color = "#D8262C") +
+  geom_text(aes(label = round(cos_sim, 2)), vjust = -1, size = 3.5, color = "#333333", fontface = "bold") +
+  scale_y_continuous(limits = c(-0.2, 1), breaks = seq(-0.2, 1, 0.2), expand = c(0.05, 0.05)) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title = element_text(size = 11),
+    axis.text.y = element_text(size = 10, face = "bold"),
+    axis.text.x = element_text(size = 4, face = "bold"),  # 横轴字体缩小一半
+    plot.title = element_text(size = 10, face = "bold"),
+    plot.subtitle = element_text(size = 10, color = "#666666"),
+    plot.margin = margin(10, 15, 10, 15)
+  ) +
+  labs(
+    title = paste0(
+      "Cosine Similarity Between “", word1_en, "”\n",
+      "and “", word2_en, "”"
+    ),
+    x = "Leader",
+    y = "Cosine Similarity"
+  )
+  
+  return(p)
+}
+```
+
+After having this function, we can measure the semantic shift of some interesting terms
+
+## 8. Semantic shifts
+
+### 8.1 Topic 1: Role of Law VS. Party Discipline
+
+The first interesting question is whether President Xi is undermining the legal reforms of his predecessors. During the Mao era, class struggle undermined the rule of law and brought severe disasters to the country.Leaders during the Reform and Opening-Up period learned from this lesson and began to establish a “socialist legal system,” emphasizing constraints on power.
+
+However, some critics argue that President Xi has reversed this reform trajectory. This study seeks to address this question by examining temporal changes in the semantic similarity among four groups of keywords.
+
+```{r}
+p1 <- compare_word_similarity("共产主义", "社会主义", "communism", "socialism") # communism vs socialism
+p2 <- compare_word_similarity("法制", "社会主义", "legal system", "socialism") # legal system vs socialism
+p3 <- compare_word_similarity("党员", "法律", "party member", "law") # party member vs law
+p4 <- compare_word_similarity("党员", "纪律", "party member", "(party) discipline") # party member vs (party) discipline
+
+(p1 | p2) / (p3 | p4)
+```
+
+One of the first observable trends is that during the Reform and Opening-Up period, the semantic distance between “socialism” and “communism” grew increasingly large, indicating a de-emphasis on ideological concerns by leaders in favor of pragmatic economic development. However, in President Xi’s speeches, the two concepts have become closer in meaning (with cosine similarity roughly twice as high as under Hu), suggesting a possible return to the ideological fervor of the Mao era.
+
+To explore the nuance further, I also measured the changing semantic distance between “socialism” and “legal system,” which appears to confirm the concern noted above — that the rule of law is being de-emphasized under President Xi.
+
+Moreover, given China’s party-state system, where Party members hold the core of political power, the question of how to constrain their behavior is crucial — “absolute power tends to corrupt absolutely.” Examining the channels through which constraints of power are emphasized can offer valuable insights into shifts in the role of law.
+
+I found that the term “Party member” has grown increasingly distant from “law,” while becoming closer to “discipline” (which, in the Chinese political context, typically refers to intra-Party regulations codified in the Party Constitution). This pattern suggests that Xi is not relying on the rule of law to tackle corruption, but rather emphasizing Party discipline — a mechanism that is generally less transparent.
+
+As a robustness check, I also measured the semantic distance between “socialism” and both “rule of law” and “democracy.” Surprisingly, the results show that President Xi has, in fact, been rhetorically linking “socialism” more closely with the “rule of law,” and there has been no significant decline in the emphasis on “democracy.”
+
+```{r}
+p1 <- compare_word_similarity("法治", "社会主义", "rule of law", "socialism") # rule of law vs socialism
+p2 <- compare_word_similarity("民主", "社会主义", "democracy", "socialism") # democracy vs socialism
+
+p1 | p2
+```
+
+Taken together with the evidence above and my domain knowledge, this leads to an interesting conclusion: President Xi appears to be rebranding China’s political system using concepts associated with modern governance—such as “socialist rule of law” and “socialist democracy”—in an effort to bolster political legitimacy.
+
+This approach stands in stark contrast to Mao, who fundamentally rejected concepts like democracy and rule of law. In orthodox Marxist thought, law is merely a tool of the ruling class, and the basic liberal assumption of equality before the law does not apply. However, in practice, Xi’s response to issues like corruption reflects a deep distrust of the rule of law and a continuing reliance on Party discipline as a core mechanism of control.
+
+### 8.2 Topic 2: Party Spirit Education and Loyalty
+
+In addition to emphasizing Party discipline, another means by which President Xi strengthens control over party members is through ideological education, which manifests in two key ways. First, Xi places great emphasis on the need for party members to possess firm belief and ideals. “Party spirit education” has become an important part of a party member’s life, aimed at ensuring they do not forget the original mission of the CCP and the noble purpose behind joining it. The semantic distance between terms like “party member” and “belief,” as well as between “party spirit” and “education,” has significantly narrowed, supporting this observation.
+
+```{r}
+p1 <- compare_word_similarity("党员", "信念", "party member", "belief") # party member vs belief
+p2 <- compare_word_similarity("党性", "教育", "party spirit", "education") # party spirit vs education
+
+p1 | p2
+```
+
+Second, President Xi has reinforced the emphasis on political loyalty. I have observed that the semantic distance between terms such as “Party member,” “cadre,” “comrade," and “Party” and the term “loyalty” has significantly narrowed in Xi’s speeches.
+
+```{r}
+p1 <- compare_word_similarity("党员", "忠诚", "Party member", "loyalty") # party member vs loyalty
+p2 <- compare_word_similarity("干部", "忠诚", "cadre", "loyalty") # cadre vs loyalty
+p3 <- compare_word_similarity("同志", "忠诚", "comrade", "loyalty") # comrade vs loyalty
+p4 <- compare_word_similarity("党", "忠诚", "Party", "loyalty") # party vs loyalty
+
+(p1 | p2) / (p3 | p4)
+```
+
+### 8.3 Topic 3: Concentration of Power
+
+n addition, President Xi has been consolidating power, which is specifically reflected in the decreasing semantic distance between the term “Party Central Committee” (党中央) and concepts related to political authority. The proximity of “Party Central Committee” to words such as “deploy,” “lead,” “decision-making,” and “implement” illustrates this trend.
+
+However, We can see that in Mao’s language, the term “Party Central Committee” was semantically distant from these words. Yet, Mao established one of the most centralized governments in human history. This is likely because Mao’s leadership over the Party and the state relied heavily on the immense authority and charisma he built as a revolutionary leader during the war. In contrast, President Xi lacks such a foundation and thus depends on more institutionalized channels—namely, reinforcing the authority of the “Party Central Committee”—to carry out this process of centralization.
+
+```{r}
+p1 <- compare_word_similarity("党中央", "部署", "Party Central Committee", "deploy") # Party Central Committee vs deploy
+p2 <- compare_word_similarity("党中央", "领导", "Party Central Committee", "lead") # Party Central Committee vs lead
+p3 <- compare_word_similarity("党中央", "决策", "Party Central Committee", "decision-making") # Party Central Committee vs decision-making
+p4 <- compare_word_similarity("党中央", "贯彻", "Party Central Committee", "implement") # Party Central Committee vs implement
+
+(p1 | p2) / (p3 | p4)
+```
+
+### 8.4 Topic 4: The Rhetoric of Nationalism
+
+Although President Xi has shown a return to Mao‘s centralization, there is a significant linguistic difference between the two: Xi is markedly more inclined to use nationalist language. In Xi’s speeches, the semantic distances between “Chinese nation” and terms like “revival” and “great” have significantly decreased. Moreover, this emphasis on nationalism also reflects a dilution of traditional ideological language, by tying abstract concepts like socialism to the Chinese nation and stressing “socialism with Chinese characteristics.” This is specifically evidenced by the narrowing semantic distances between “Chinese nation” and “socialism,” as well as between “socialism” and “characteristics.”
+
+```{r}
+p1 <- compare_word_similarity("中华民族", "复兴", "Chinese Nation", "revival") # Chinese Nation vs revival
+p2 <- compare_word_similarity("中华民族", "伟大", "Chinese Nation", "great") # Chinese Nation vs great
+p3 <- compare_word_similarity("中华民族", "社会主义", "Chinese Nation", "socialism") # Chinese Nation vs socialism
+p4 <- compare_word_similarity("特色", "社会主义", "characteristics", "socialism") # characteristics vs socialism
+
+(p1 | p2) / (p3 | p4)
+```
+
+Since “great” is merely a form of positive expression, one way to verify this pattern is by identifying the nearest neighbors of “Chinese nation” in the language of both Mao and Xi.
+
+The 10 nearest neighbors of “Chinese nation” for Mao are: Chinese nation, old, new, culture, new economy, worldview, New Democratic, politics, enslave, above. These words do not carry strong emotional connotations; many of them are political terms.
+
+The 10 nearest neighbors of “Chinese nation” for Xi are: Chinese nation, great, revival, Chinese people, nation, history, struggle, realize, Chinese, socialism. These words carry strong nationalist emotional connotations. Therefore, the previous findings are robust.
+
+```{r}
+nearest_words(mao_word_vectors, "中华民族", 10)
+```
+
+```{r}
+nearest_words(xi_word_vectors, "中华民族", 10)
+```
+
+### 8.5 Topic 5: The Direction of Reform
+
+Another common criticism of President Xi is that market-oriented reforms have stalled—or even regressed—during his tenure, marked by a renewed emphasis on state-owned enterprises. To examine this observation, I first measured the semantic distance between “reform” and “system.” The rationale is that during the Jiang and Hu eras, both economic and even political system reforms were key national strategies, contributing to decades of rapid economic growth in China. However, the distance between “reform” and “system” has widened under President Xi, suggesting that critics are, to some extent, correct in arguing that he has rejected deeper, systemic reform.
+
+Moreover, the distances between “reform” and terms like “market economy” and “enterprise” have also grown, further supporting the critics’ perspective. However, this does not mean that President Xi has pursued no reforms at all. Compared to his predecessors, one of Xi’s notable innovations is the emphasis on modernizing the country’s governance capacity and governance system as a key reform objective. This is reflected in the decreasing semantic distance between “governance” and “reform.”
+
+```{r}
+p1 <- compare_word_similarity("改革", "体制", "reform", "system") # reform vs system
+p2 <- compare_word_similarity("改革", "市场经济", "reform", "market economy") # reform vs market economy
+p3 <- compare_word_similarity("改革", "企业", "reform", "enterprise") # reform vs enterprise
+p4 <- compare_word_similarity("改革", "治理", "reform", "governance") # reform vs governance
+
+(p1 | p2) / (p3 | p4)
+```
+
+### 8.6 Topic 6: Attitude to “Struggle”
+
+One sign that has raised concern among observers is that President Xi appears to be imitating Mao’s language by placing renewed emphasis on “struggle.” Class struggle is a core tenet of Marxism and a central theme of Maoism. As a result, this rhetorical return is seen as a signal of a potentially dangerous ideological revival. I observed that the semantic distances between “struggle” and terms like “great” and “development” have narrowed, with the distance between “great” and “struggle” under Xi even appearing closer than under Mao—seemingly supporting this observation. However, in my robustness checks, I found that Xi is merely “borrowing” Mao’s language; their use of the term “struggle” is not entirely the same.
+
+In fact, the distance between “struggle” and “class” has been steadily increasing, indicating that orthodox Marxist ideology has been gradually de-emphasized, even during Xi’s tenure. However, Mao appears more like an orthodox Marxist in this regard. Meanwhile, the distance between “struggle” and “Chinese nation” has significantly narrowed in Xi’s speeches. After reviewing relevant speeches, I found that Xi generally uses the term “struggle” in the context of “struggling for the revival of the Chinese nation.” The conclusion is that although Xi has borrowed the Marxist-ideological term “struggle” from Mao, its meaning has been replaced by a nationalist narrative.
+
+```{r}
+p1 <- compare_word_similarity("斗争", "伟大", "struggle", "great") # struggle vs great
+p2 <- compare_word_similarity("斗争", "发展", "struggle", "development") # struggle vs development
+p3 <- compare_word_similarity("斗争", "阶级", "struggle", "class") # struggle vs class
+p4 <- compare_word_similarity("斗争", "中华民族", "struggle", "Chinese nation") # struggle vs Chinese nation
+
+(p1 | p2) / (p3 | p4)
+```
+
+To verify the robustness of my findings, I also identified the nearest neighbors of the term “struggle” in the language of both Xi and Mao.
+
+The 10 nearest neighbors of “struggle” for Mao are: struggle, in, revolution, the masses, as, development, thought, against, doing, people. These words generally reflect the orthodox ideology of Marxism.
+
+The 10 nearest neighbors of “Chinese nation” for Xi are: struggle, great, anti-, corruption, dare to, victory, revolution, doing, history, Party. These words suggest that President Xi’s use of “struggle” largely refers to the “anti-corruption struggle” and is closely tied to the broader historical trajectory. Therefore, the previous findings are robust.
+
+```{r}
+nearest_words(mao_word_vectors, "斗争", 10)
+```
+
+```{r}
+nearest_words(xi_word_vectors, "斗争", 10)
+```
+
+## 9. Conclusion and Discussion
+
+Is President Xi imitating Mao? The answer is both yes and no. While both leaders share a deep mistrust of the rule of law, Xi relies more heavily on institutionalized tools to build his personal rule. For example, he emphasizes intra-Party discipline to constrain party members and uses institutionalized party spirit education to strengthen ideological purity and loyalty within the Party. In addition, Xi consolidates power by reinforcing the authority of the Party Central Committee, whereas Mao derived personal authority from his charisma as a revolutionary leader.
+
+Moreover, although Xi adopts Maoist language—such as the term “struggle”—this borrowing serves nationalist purposes and departs from the original meaning rooted in orthodox Marxism. This shift is largely a consequence of the ideological vacuum left by the collapse of the Soviet Union, after which the CCP increasingly turned to nationalism to maintain regime legitimacy and national cohesion. This trend has intensified under Xi, particularly as China rises as a global superpower and confronts strategic competition with the United States.
+
+Finally, compared to his reform-era predecessors, such as Jiang Zemin and Hu Jintao, Xi has avoided systemic and market-oriented reforms, instead redefining “reform” as a means of improving governance capacity. In conclusion, it would be an oversimplification to say that Xi is merely imitating Mao. In reality, Xi is borrowing Mao’s language while constructing his own version of a more institutionalized and nationalist form of neo-authoritarianism.
+
+This study primarily focuses on comparing Xi with Mao; however, it does not delve deeply into comparisons between Xi and his predecessors from the reform era. Future research could explore these distinctions, which would be valuable for understanding the future trajectory of China’s economic and political landscape. Additionally, this study relies on a single corpus, namely, speeches and selected works of the leaders. Future work could incorporate other sources, such as newspapers, to enable cross-validation.
+
+## Reference
+
+Hannah Beech. (March 31, 2016). China’s Chairman Builds a Cult of Personality. Time. https://time.com/4277504/chinas-chairman/
