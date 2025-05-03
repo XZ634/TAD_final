@@ -12,10 +12,8 @@ This project investigates whether President Xi Jinping is imitating Mao Zedong t
     Contains 847 documents scraped from *The Database of Xi Jinping’s Important Speech Series*.\
     *Note: These include both actual speech transcripts and news reports.*
 
--   `data/Mao.csv` `data/Deng.csv` `data/Jiang.csv` `data/Hu.csv` Official selected works of Mao Zedong, Deng Xiaoping, Jiang Zemin, and Hu Jintao, used to construct historical word embeddings.
-
--   `data/speech_filtered.csv`\
-    Cleaned and segmented speech text in Chinese, processed using `pkuseg` (Python-based tokenizer).
+-   `data/Mao.csv` `data/Deng.csv` `data/Jiang.csv` `data/Hu.csv` 
+    Official selected works of Mao Zedong, Deng Xiaoping, Jiang Zemin, and Hu Jintao, used to construct historical word embeddings.
 
 -   `data/xispeak_sample_labeled.csv`\
     A CSV file containing 200 manually labeled documents used to train the random forest classifier.
@@ -39,8 +37,11 @@ This project investigates whether President Xi Jinping is imitating Mao Zedong t
     -   Trains separate GloVe models for each leader's corpus.
     -   Measures cosine similarity between concept pairs (e.g., "reform" vs "rule of law") to track semantic shifts across leaders.
 
-### 📤 Outputs
+### 📤 Key Outputs
 
+-   `data/speech_filtered.csv`\
+    Cleaned and segmented speech transcripts of President Xi, processed using `pkuseg` (Python-based tokenizer).
+    
 -   **Results of LDA**
 
 ![Results of LDA](TAD_final_files/figure-html/unnamed-chunk-33-1.png)
