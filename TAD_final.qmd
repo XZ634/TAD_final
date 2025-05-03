@@ -742,7 +742,7 @@ As illustrated in the graph, now there are no same documents. All duplicated doc
 write.csv(speech_seg_filtered, "data/speech_filtered.csv", row.names = FALSE)
 ```
 
-## 6 Unsupervised Machine Learning
+## 6. Unsupervised Machine Learning
 
 ### 6.1 Determine The Optimal Number of Topics
 
