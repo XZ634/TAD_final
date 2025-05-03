@@ -12,7 +12,7 @@ This project investigates whether President Xi Jinping is imitating Mao Zedong t
     Contains 847 documents scraped from *The Database of Xi Jinping’s Important Speech Series*.\
     *Note: These include both actual speech transcripts and news reports.*
 
--   `data/Mao.csv` `data/Deng.csv` `data/Jiang.csv` `data/Hu.csv` 
+-   `data/Mao.csv` `data/Deng.csv` `data/Jiang.csv` `data/Hu.csv`\
     Official selected works of Mao Zedong, Deng Xiaoping, Jiang Zemin, and Hu Jintao, used to construct historical word embeddings.
 
 -   `data/xispeak_sample_labeled.csv`\
@@ -40,7 +40,7 @@ This project investigates whether President Xi Jinping is imitating Mao Zedong t
 ### 📤 Key Outputs
 
 -   `data/speech_filtered.csv`\
-    Cleaned and segmented speech transcripts of President Xi, processed using `pkuseg` (Python-based tokenizer).
+    Cleaned and segmented speech transcripts of President Xi, processed using `pkuseg`.
     
 -   **Results of LDA**
 
