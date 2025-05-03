@@ -2,6 +2,8 @@
 
 This project investigates whether President Xi Jinping is imitating Mao Zedong through a computational text analysis of Chinese political discourse. The analysis combines topic modeling and word embeddings to track thematic and semantic changes over time in Xi's speeches compared to previous leaders.
 
+[Website of The Project](https://xz634.github.io/TAD_final/)
+
 ## 📂 Directory Overview
 
 ### 📥 Key Inputs
