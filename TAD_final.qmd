@@ -50,9 +50,13 @@ President Xi’s centralizing behavior, the removal of term limits, and his appa
 > Xi is using some of Mao’s strategies to unite the masses and burnish his personal rule, injecting Marxist and Maoist ideology back into Chinese life.\
 > — *Hannah Beech, Time*, Beijing, March 31, 2016
 
+However, to date, no study has employed a text-as-data approach to empirically examine this important question. This paper represents an initial attempt to do so.
+
 ![Illustration by Tim O'Brien for TIME](pictures/Time.jpg)
 
-However, to date, no study has employed a text-as-data approach to empirically examine this important question. This paper represents an initial attempt to do so.
+Speeches serve as crucial data for understanding the agendas of political figures. While political speeches have emerged as critical data in political science, TAD-based studies of speeches of Chinese leaders remain scarce. Lim et al. (2025) conducted a preliminary exploration of Xi’s agenda using The Database of Xi Jinping’s Important Speech Series, identifying 25 topics and illustrating the temporal trends of their proportion. However, since this study utilizes a variety of overlapping sources, duplicate documents may introduce biases in the estimated topic proportions. Therefore, this paper aims to apply supervised machine learning to identify unique speeches and then classify them using structural topic model to better understand the shift in Xi’s agenda over time.
+
+Furthermore, although the study by Lim et al. (2025) explores changes in Xi’s agenda, these insights are solely derived from the temporal trends in estimated topic proportions, lacking a nuanced discussion of how these changes are reflected in semantic shifts. Therefore, this paper aims to apply word embedding to map semantic shifts in key terms, such as “reform,” over time. In addition, this also facilitates my ability to address the research question of whether President Xi is imitating Mao.
 
 ## 1.Data Source and Web Scraping
 
@@ -1607,7 +1611,7 @@ p4 <- compare_word_similarity("特色", "社会主义", "characteristics", "soci
 
 Since “great” is merely a form of positive expression, one way to verify this pattern is by identifying the nearest neighbors of “Chinese nation” in the language of both Mao and Xi.
 
-The 10 nearest neighbors of “Chinese nation” for Mao are: Chinese nation, old, new, culture, new economy, worldview, New Democratic, politics, enslave, above. These words do not carry strong emotional connotations; many of them are political terms.
+The 10 nearest neighbors of “Chinese nation” for Mao are: Chinese nation, culture, politics, original jurisdiction, Hebei, condone, is, new, old, independence. These words do not carry strong emotional connotations; many of them are political terms.
 
 The 10 nearest neighbors of “Chinese nation” for Xi are: Chinese nation, great, revival, Chinese people, nation, history, struggle, realize, Chinese, socialism. These words carry strong nationalist emotional connotations. Therefore, the previous findings are robust.
 
@@ -1651,7 +1655,7 @@ p4 <- compare_word_similarity("斗争", "中华民族", "struggle", "Chinese nat
 
 To verify the robustness of my findings, I also identified the nearest neighbors of the term “struggle” in the language of both Xi and Mao.
 
-The 10 nearest neighbors of “struggle” for Mao are: struggle, in, revolution, the masses, as, development, thought, against, doing, people. These words generally reflect the orthodox ideology of Marxism.
+The 10 nearest neighbors of “struggle” for Mao are: struggle, in, revolution, against, victory, the masses, conflict, development, anti-, as. These words generally reflect the orthodox ideology of Marxism.
 
 The 10 nearest neighbors of “Chinese nation” for Xi are: struggle, great, anti-, corruption, dare to, victory, revolution, doing, history, Party. These words suggest that President Xi’s use of “struggle” largely refers to the “anti-corruption struggle” and is closely tied to the broader historical trajectory. Therefore, the previous findings are robust.
 
@@ -1671,8 +1675,12 @@ Moreover, although Xi adopts Maoist language—such as the term “struggle”�
 
 Finally, compared to his reform-era predecessors, such as Jiang Zemin and Hu Jintao, Xi has avoided systemic and market-oriented reforms, instead redefining “reform” as a means of improving governance capacity. In conclusion, it would be an oversimplification to say that Xi is merely imitating Mao. In reality, Xi is borrowing Mao’s language while constructing his own version of a more institutionalized and nationalist form of neo-authoritarianism.
 
+This study builds on the work of Lim et al. (2025) by not only examining topic shifts in President Xi’s speeches across different terms, but also incorporating word embeddings to compare semantic shifts in key concepts between Xi and his predecessors. More importantly, this study seeks to answer whether Xi is imitating Mao by analyzing six key themes in contemporary Chinese political discourse. Given that Xi has abolished term limits, understanding his agenda and political preferences offers valuable insights into China’s political and policy trajectory in the years to come.
+
 This study primarily focuses on comparing Xi with Mao; however, it does not delve deeply into comparisons between Xi and his predecessors from the reform era. Future research could explore these distinctions, which would be valuable for understanding the future trajectory of China’s economic and political landscape. Additionally, this study relies on a single corpus, namely, speeches and selected works of the leaders. Future work could incorporate other sources, such as newspapers, to enable cross-validation.
 
 ## Reference
 
 Hannah Beech. (March 31, 2016). China’s Chairman Builds a Cult of Personality. Time. https://time.com/4277504/chinas-chairman/
+
+Lim, J., Ito, A., & Zhang, H. (2025). Uncovering Xi Jinping’s Policy Agenda: Text As Data Approach. Developing Economies, 63(1), 9–46. https://doi.org/10.1111/deve.12418
