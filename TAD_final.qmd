@@ -1,5 +1,6 @@
 ---
-title: "Does President Xi Make like Mao? A Broader Historical Perspective Using TAD"
+title: "President Xi's Agenda and Semantic Shifting in China's Political Language"
+subtitle: "-- A Text As Data Analysis"
 author: "Xiangming Zeng"
 freeze: true
 format:
@@ -45,14 +46,12 @@ cb_palette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"
 
 ## A Brief Introduction
 
-President Xi’s centralizing behavior, the removal of term limits, and his apparent imitation of Mao’s rhetoric have sparked widespread concern among observers: Is China heading toward a future marked by a return to the ideological fervor of the Mao era? As one article in Time put it.
+President Xi’s centralizing behavior, the removal of term limits, and his apparent imitation of Mao’s rhetoric have sparked widespread concern among observers of Chinese politics: Is China heading toward a future marked by a return to the ideological fervor of the Mao era? As one article in Time put it.
 
 > Xi is using some of Mao’s strategies to unite the masses and burnish his personal rule, injecting Marxist and Maoist ideology back into Chinese life.\
 > — *Hannah Beech, Time*, Beijing, March 31, 2016
 
 However, to date, no study has employed a text-as-data approach to empirically examine this important question. This paper represents an initial attempt to do so.
-
-![Illustration by Tim O'Brien for TIME](pictures/Time.jpg)
 
 Speeches serve as crucial data for understanding the agendas of political figures. While political speeches have emerged as critical data in political science, TAD-based studies of speeches of Chinese leaders remain scarce. Lim et al. (2025) conducted a preliminary exploration of Xi’s agenda using The Database of Xi Jinping’s Important Speech Series, identifying 25 topics and illustrating the temporal trends of their proportion. However, since this study utilizes a variety of overlapping sources, duplicate documents may introduce biases in the estimated topic proportions. Therefore, this paper aims to apply supervised machine learning to identify unique speeches and then classify them using structural topic model to better understand the shift in Xi’s agenda over time.
 
